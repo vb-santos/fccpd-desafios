@@ -1,12 +1,5 @@
 #!/bin/bash
 
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║  Cliente - Testador de Microsserviços                  ║"
-echo "║  Serviço A: Fornecedor de Dados                        ║"
-echo "║  Serviço B: Consumidor e Análise                       ║"
-echo "╚════════════════════════════════════════════════════════╝"
-echo ""
-
 sleep 15
 
 CONTADOR=0
