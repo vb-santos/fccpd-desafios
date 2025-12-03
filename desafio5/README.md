@@ -1,44 +1,35 @@
 # 📋 Descrição
 
-Este projeto demonstra a comunicação entre três containers Docker em uma rede bridge customizada.  
-O container `db` executa um banco de dados PostgreSQL inicializado com a tabela `posts`.  
-O container `web` executa uma aplicação Flask que expõe endpoints REST para manipulação e consulta de posts, além de integração com Redis para cache e contadores.  
-O container `client` realiza requisições periódicas à aplicação, exibindo status, posts e estatísticas.
+Este projeto implementa uma arquitetura de **microserviços** utilizando Docker e Flask.  
+A solução é composta por três serviços principais e um cliente de testes:
 
-- **Banco de Dados (db):** PostgreSQL inicializado com `init.sql`, contendo a tabela `posts` e dados de exemplo.
-- **Aplicação (web):** Python 3.11 + Flask + psycopg2 + redis, expõe endpoints:
-    - `GET /health` → health check
-    - `GET /status` → status da aplicação e conexões
-    - `GET /api/posts` → lista posts
-    - `POST /api/posts` → cria post
-    - `GET /api/posts/cache` → lista posts com cache Redis
-    - `GET /api/counter` → contador de requisições (Redis)
-    - `GET /api/stats` → estatísticas gerais
-- **Cliente (client):** Base `curlimages/curl:8.4.0`, script shell automatiza requisições periódicas (a cada 15s).
-- **Cache (cache):** Redis 7-alpine para cache de posts e contadores.
+- **Usuários Service (usuarios-service):** Microserviço responsável pelo CRUD de usuários e estatísticas de perfis.
+- **Pedidos Service (pedidos-service):** Microserviço responsável pelo CRUD de pedidos e estatísticas de status e valores.
+- **API Gateway (api-gateway):** Camada central que expõe endpoints unificados, roteando requisições para os microserviços de usuários e pedidos.
+- **Cliente (client-gateway-test):** Script automatizado que executa testes de integração contra o API Gateway, validando endpoints e fluxos.
+
+Todos os serviços se comunicam através da rede Docker `gateway-network`.
 
 ---
 
 # 🔄 Funcionamento
 
 - **Inicialização:**
-    - A rede Docker é criada pelo Compose.
-    - O serviço `db` sobe primeiro, inicializando a tabela `posts` com dados via `init.sql`.
-    - O serviço `cache` sobe em paralelo, fornecendo Redis para cache e contadores.
-    - O serviço `web` sobe em seguida, conectando-se ao banco e ao Redis.
-    - O serviço `client` sobe por último e aguarda 15 segundos antes de iniciar o loop.
+    - A rede `gateway-network` é criada pelo Docker Compose.
+    - O serviço `usuarios-service` sobe primeiro e expõe endpoints em `localhost:5001`.
+    - O serviço `pedidos-service` sobe em paralelo e expõe endpoints em `localhost:5002`.
+    - O serviço `api-gateway` sobe em seguida, conectando-se aos dois microserviços e expondo endpoints unificados em `localhost:5000`.
+    - O serviço `client-gateway-test` sobe por último e executa o script `test_gateway.sh`, realizando chamadas periódicas ao Gateway.
 
-- **Ciclo do cliente:**
-    - Faz `GET /health` para verificar saúde da aplicação.
-    - Faz `GET /status` para verificar conexões com DB e Redis.
-    - Faz `GET /api/posts` para listar posts do banco.
-    - Faz `GET /api/posts/cache` para listar posts com cache.
-    - Faz `GET /api/counter` para incrementar e exibir contador de requisições.
-    - Faz `GET /api/stats` para estatísticas gerais.
-    - Exibe resultados formatados e repete a cada 15 segundos.
+- **Fluxo de comunicação:**
+    - O **API Gateway** recebe requisições externas e delega para os microserviços internos.
+    - Endpoints compostos como `/dashboard` e `/users-with-orders` agregam dados de múltiplos serviços.
+    - O cliente de testes valida operações como criação, atualização, filtros e estatísticas de usuários e pedidos.
 
-- **Acesso externo:**
-    - Os endpoints da aplicação podem ser testados via `localhost:5000` na máquina host.
+- **Endpoints principais:**
+    - **Gateway:** `/health`, `/users`, `/orders`, `/dashboard`, `/users-with-orders`
+    - **Usuários Service:** `/api/users`, `/api/users/<id>`, `/api/users/statistics/summary`
+    - **Pedidos Service:** `/api/orders`, `/api/orders/<id>`, `/api/orders/user/<id>`, `/api/orders/statistics/summary`
 
 ---
 
@@ -58,13 +49,14 @@ docker compose version
 
 ## 2. Estrutura dos arquivos (referência)
 - docker-compose.yml
-- Dockerfile.web
+- Dockerfile.users
+- Dockerfile.pedidos
+- Dockerfile.gateway
 - Dockerfile.client
-- Dockerfile.cache
-- web/app.py
-- web/requirements.txt
-- db/init.sql
-- client/test_comunicacao.sh
+- users/app.py
+- pedidos/app.py
+- gateway/app.py
+- client/test_gateway.sh
 
 ## 3. Build das imagens
 ```bash
@@ -73,10 +65,10 @@ docker compose build
 
 Resultado esperado:
 
-- db (PostgreSQL com init.sql)
-- web (Python + Flask + psycopg2 + redis)
-- client (curl + script)
-- cache (Redis)
+- usuarios-service (Flask Users)
+- pedidos-service (Flask Orders)
+- api-gateway (Flask Gateway)
+- client-gateway-test (script de testes)
 
 ## 4. Subir os serviços
 Modo foreground (logs no terminal):
@@ -97,27 +89,25 @@ docker compose logs -f
 ## 6. Testes manuais
 Enquanto os containers estão rodando:
 ```bash
-# Health check
+# Health check do Gateway
 curl http://localhost:5000/health
 
-# Status
-curl http://localhost:5000/status
+# Listar usuários via Gateway
+curl http://localhost:5000/users
 
-# Listar posts
-curl http://localhost:5000/api/posts
+# Criar novo usuário
+curl -X POST http://localhost:5000/users -H "Content-Type: application/json" \
+    -d '{"name":"Victor","email":"victor@email.com","profile":"client"}'
 
-# Criar novo post
-curl -X POST http://localhost:5000/api/posts -H "Content-Type: application/json" \
-    -d '{"titulo":"Novo Post","conteudo":"Conteúdo de teste","autor":"Victor"}'
+# Listar pedidos via Gateway
+curl http://localhost:5000/orders
 
-# Posts com cache
-curl http://localhost:5000/api/posts/cache
+# Criar novo pedido
+curl -X POST http://localhost:5000/orders -H "Content-Type: application/json" \
+    -d '{"user_id":1,"items":[{"product":"Notebook","quantity":1,"price":3500.00}]}'
 
-# Contador de requisições
-curl http://localhost:5000/api/counter
-
-# Estatísticas gerais
-curl http://localhost:5000/api/stats
+# Dashboard consolidado
+curl http://localhost:5000/dashboard
 ```
 
 ## 7. Verificar execução e rede
@@ -128,12 +118,12 @@ docker ps
 
 Inspecionar rede:
 ```bash
-docker network inspect rede-persistencia
+docker network inspect gateway-network
 ```
 
 Testar conectividade entre containers:
 ```bash
-docker exec client ping -c 2 web
+docker exec client-gateway-test ping -c 2 api-gateway
 ```
 
 ## 8. Encerrar e limpar

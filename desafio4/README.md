@@ -1,44 +1,31 @@
 # 📋 Descrição
 
-Este projeto demonstra a comunicação entre três containers Docker em uma rede bridge customizada.  
-O container `db` executa um banco de dados PostgreSQL inicializado com a tabela `posts`.  
-O container `web` executa uma aplicação Flask que expõe endpoints REST para manipulação e consulta de posts, além de integração com Redis para cache e contadores.  
-O container `client` realiza requisições periódicas à aplicação, exibindo status, posts e estatísticas.
+Este projeto demonstra uma arquitetura simples de **microserviços** com dois serviços independentes e um cliente de testes:
 
-- **Banco de Dados (db):** PostgreSQL inicializado com `init.sql`, contendo a tabela `posts` e dados de exemplo.
-- **Aplicação (web):** Python 3.11 + Flask + psycopg2 + redis, expõe endpoints:
-  - `GET /health` → health check
-  - `GET /status` → status da aplicação e conexões
-  - `GET /api/posts` → lista posts
-  - `POST /api/posts` → cria post
-  - `GET /api/posts/cache` → lista posts com cache Redis
-  - `GET /api/counter` → contador de requisições (Redis)
-  - `GET /api/stats` → estatísticas gerais
-- **Cliente (client):** Base `curlimages/curl:8.4.0`, script shell automatiza requisições periódicas (a cada 15s).
-- **Cache (cache):** Redis 7-alpine para cache de posts e contadores.
+- **Serviço A (serva-usuarios):** Responsável pelo gerenciamento de usuários, oferecendo CRUD básico e estatísticas.
+- **Serviço B (servb-analise):** Consome os dados do Serviço A, formata informações, gera relatórios e fornece endpoints de análise e status de comunicação.
+- **Cliente (client-teste-microsservicos):** Script automatizado que executa testes periódicos, validando a comunicação entre os serviços e exibindo relatórios.
+
+Todos os serviços se comunicam através da rede Docker `rede-microsservicos`.
 
 ---
 
 # 🔄 Funcionamento
 
 - **Inicialização:**
-  - A rede Docker é criada pelo Compose.
-  - O serviço `db` sobe primeiro, inicializando a tabela `posts` com dados via `init.sql`.
-  - O serviço `cache` sobe em paralelo, fornecendo Redis para cache e contadores.
-  - O serviço `web` sobe em seguida, conectando-se ao banco e ao Redis.
-  - O serviço `client` sobe por último e aguarda 15 segundos antes de iniciar o loop.
+  - A rede `rede-microsservicos` é criada pelo Docker Compose.
+  - O **Serviço A** sobe primeiro e expõe endpoints em `localhost:5001`.
+  - O **Serviço B** sobe em seguida, aguardando o Serviço A estar saudável antes de iniciar. Ele consome os dados do Serviço A e expõe endpoints em `localhost:5002`.
+  - O **Cliente** sobe por último e executa o script `test_microsservicos.sh`, realizando chamadas periódicas para validar os serviços.
 
-- **Ciclo do cliente:**
-  - Faz `GET /health` para verificar saúde da aplicação.
-  - Faz `GET /status` para verificar conexões com DB e Redis.
-  - Faz `GET /api/posts` para listar posts do banco.
-  - Faz `GET /api/posts/cache` para listar posts com cache.
-  - Faz `GET /api/counter` para incrementar e exibir contador de requisições.
-  - Faz `GET /api/stats` para estatísticas gerais.
-  - Exibe resultados formatados e repete a cada 15 segundos.
+- **Fluxo de comunicação:**
+  - O **Serviço A** fornece dados brutos de usuários e estatísticas.
+  - O **Serviço B** consome os dados do Serviço A, formata informações, gera relatórios detalhados e expõe endpoints adicionais.
+  - O **Cliente** executa testes automáticos, verificando health checks, listagens, relatórios e status de comunicação.
 
-- **Acesso externo:**
-  - Os endpoints da aplicação podem ser testados via `localhost:5000` na máquina host.
+- **Endpoints principais:**
+  - **Serviço A:** `/health`, `/api/users`, `/api/users/<id>`, `/api/users/statistics/summary`
+  - **Serviço B:** `/health`, `/api/users/formatted`, `/api/users/report`, `/api/users/<id>/details`, `/api/services-status`
 
 ---
 
@@ -58,13 +45,12 @@ docker compose version
 
 ## 2. Estrutura dos arquivos (referência)
 - docker-compose.yml
-- Dockerfile.web
+- Dockerfile.serva
+- Dockerfile.servb
 - Dockerfile.client
-- Dockerfile.cache
-- web/app.py
-- web/requirements.txt
-- db/init.sql
-- client/test_comunicacao.sh
+- serva/app.py
+- servb/app.py
+- client/test_microsservicos.sh
 
 ## 3. Build das imagens
 ```bash
@@ -73,10 +59,9 @@ docker compose build
 
 Resultado esperado:
 
-- db (PostgreSQL com init.sql)
-- web (Python + Flask + psycopg2 + redis)
-- client (curl + script)
-- cache (Redis)
+- serva-usuarios (Flask Users)
+- servb-analise (Flask Analysis)
+- client-teste-microsservicos (script de testes)
 
 ## 4. Subir os serviços
 Modo foreground (logs no terminal):
@@ -95,29 +80,26 @@ docker compose logs -f
 ```
 
 ## 6. Testes manuais
-Enquanto os containers estão rodando:
-```bash
-# Health check
-curl http://localhost:5000/health
+# Health check Serviço A
+curl http://localhost:5001/health
 
-# Status
-curl http://localhost:5000/status
+# Listar usuários Serviço A
+curl http://localhost:5001/api/users
 
-# Listar posts
-curl http://localhost:5000/api/posts
+# Health check Serviço B
+curl http://localhost:5002/health
 
-# Criar novo post
-curl -X POST http://localhost:5000/api/posts -H "Content-Type: application/json" \
-    -d '{"titulo":"Novo Post","conteudo":"Conteúdo de teste","autor":"Victor"}'
+# Usuários formatados Serviço B
+curl http://localhost:5002/api/users/formatted
 
-# Posts com cache
-curl http://localhost:5000/api/posts/cache
+# Relatório completo Serviço B
+curl http://localhost:5002/api/users/report
 
-# Contador de requisições
-curl http://localhost:5000/api/counter
+# Detalhes de um usuário via Serviço B
+curl http://localhost:5002/api/users/1/details
 
-# Estatísticas gerais
-curl http://localhost:5000/api/stats
+# Status dos serviços
+curl http://localhost:5002/api/services-status
 ```
 
 ## 7. Verificar execução e rede
@@ -128,12 +110,12 @@ docker ps
 
 Inspecionar rede:
 ```bash
-docker network inspect rede-persistencia
+docker network inspect rede-microsservicos
 ```
 
 Testar conectividade entre containers:
 ```bash
-docker exec client ping -c 2 web
+docker exec client-teste-microsservicos ping -c 2 serva
 ```
 
 ## 8. Encerrar e limpar
